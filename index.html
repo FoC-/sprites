@@ -11,8 +11,33 @@
       html {
         background-color: #fae3e8;
       }
+      header hgroup,
+      section {
+        margin-left: var(--pico-block-spacing-horizontal);
+        margin-right: var(--pico-block-spacing-horizontal);
+      }
+
+      header,
+      main {
+        background-color: #e3faf5;
+        box-shadow:
+          0 4px 8px 0 rgba(0, 0, 0, 0.2),
+          0 6px 20px 0 rgba(0, 0, 0, 0.19);
+      }
+
+      #output {
+        display: flex;
+        justify-content: space-evenly;
+        flex-wrap: wrap;
+      }
+
+      #output label {
+        scale: 75%;
+      }
+
       canvas {
         margin-top: var(--pico-form-element-spacing-vertical);
+        margin-bottom: var(--pico-form-element-spacing-vertical);
         width: 100%;
         border: 1px solid #333;
       }
@@ -21,66 +46,83 @@
         display: none;
       }
 
-      #container {
-        margin: 1.5% auto;
-        padding: 20px;
-        width: fit-content;
-        max-width: 789px;
-        background-color: #e3faf5;
-        display: flex;
-        flex-direction: column;
-        box-shadow:
-          0 4px 8px 0 rgba(0, 0, 0, 0.2),
-          0 6px 20px 0 rgba(0, 0, 0, 0.19);
-      }
-
       .hidden {
         display: none !important;
       }
     </style>
   </head>
   <body>
-    <div id="container">
-      <h1>SpriteSheet Cutter</h1>
+    <header class="container">
+      <hgroup>
+        <h1>Sprite sheet cutter</h1>
+        <p>
+          Free, SERVERLESS, online tool for making subsets of image sprites.
+          <br />
+          Additionally generate css and metadata for new sheets.
+        </p>
+      </hgroup>
+    </header>
+    <main class="container">
+      <section class="step1">
+        <h4>1. Start with selection of files.</h4>
 
-      <div class="step1">
-        <label forHtml="image">Sprite file</label>
-        <input name="image" type="file" accept="image/webp" />
-        <span id="dimensions"></span>
-        <label forHtml="json">Description file</label>
-        <input name="json" type="file" accept="application/json" />
-        <label forHtml="width">Width</label>
-        <input name="width" placeholder="Width" type="number" value="66" min="1" />
-        <label forHtml="height">Height</label>
-        <input name="height" placeholder="Height" type="number" value="66" min="1" />
+        <div class="grid">
+          <label forHtml="image">
+            Sprite file
+            <input name="image" type="file" accept="image/webp" />
+            <span id="dimensions"></span>
+          </label>
+          <label forHtml="json">
+            Description file
+            <input name="json" type="file" accept="application/json" />
+          </label>
+        </div>
+
+        <h4>2. Select dimensions for sprite.</h4>
+        <div class="grid">
+          <input name="width" placeholder="Width" type="number" min="1" />
+          <input name="height" placeholder="Height" type="number" min="1" />
+        </div>
         <button name="process-step1" class="outline" disabled>Go!!!</button>
-      </div>
+      </section>
 
-      <div class="step2">
+      <section class="step2">
+        <div role="group">
+          <button name="select-all">Select ALL</button>
+          <button name="unselect-all">Unselect ALL</button>
+          <button name="invert-selection">Invert selection</button>
+        </div>
         <fieldset id="output"></fieldset>
         <button name="process-step2" class="outline">Go!!!</button>
         <canvas></canvas>
         <div role="group">
           <button name="download">Download</button>
         </div>
-      </div>
-    </div>
-
+      </section>
+    </main>
     <script type="module">
       import { Zip } from "./src";
 
-      const inputImage = document.querySelector("input[name=image]");
-      const spanDimensions = document.querySelector("#dimensions");
-      const inputJson = document.querySelector("input[name=json]");
+      const $ = (selector, el = document) => el.querySelector(selector);
+      const $$ = (selector, el = document) => el.querySelectorAll(selector);
+      const $ce = (name, props = {}) => Object.assign(document.createElement(name), props);
 
-      const inputWidth = document.querySelector("input[name=width]");
-      const inputHeight = document.querySelector("input[name=height]");
+      const buttonOnClick = (name, handler) => {
+        $(`button[name=${name}]`).onclick = (e) => handler(e.target);
+      };
 
-      const buttonProcessStep1 = document.querySelector("button[name=process-step1]");
-      const fieldset = document.querySelector("#output");
-      const buttonProcessStep2 = document.querySelector("button[name=process-step2]");
-      const resultCanvas = document.querySelector("canvas");
-      const buttonDownload = document.querySelector("button[name=download]");
+      const inputImage = $("input[name=image]");
+      const spanDimensions = $("#dimensions");
+      const inputJson = $("input[name=json]");
+      const inputWidth = $("input[name=width]");
+      const inputHeight = $("input[name=height]");
+
+      buttonOnClick("select-all", () => $$("#output input").forEach((e) => (e.checked = true)));
+      buttonOnClick("unselect-all", () => $$("#output input").forEach((e) => (e.checked = false)));
+      buttonOnClick("invert-selection", () => $$("#output input").forEach((e) => (e.checked = !e.checked)));
+
+      const fieldset = $("#output");
+      const resultCanvas = $("canvas");
 
       const imagePromise = new Promise((resolve, reject) => {
         inputImage.onchange = () => {
@@ -91,7 +133,7 @@
           const reader = new FileReader();
           reader.onload = (e) => {
             const image = new Image();
-            image.onload = function () {
+            image.onload = () => {
               spanDimensions.textContent = `width: ${image.naturalWidth}, height: ${image.naturalHeight}`;
               resolve(image);
             };
@@ -117,53 +159,45 @@
       });
 
       Promise.all([imagePromise, mappingPromise]).then(([image, mapping]) => {
-        buttonProcessStep1.onclick = () => {
-          document.querySelectorAll(".step1").forEach((e) => (e.style.display = "none"));
-          buttonProcessStep1.disabled = true;
+        buttonOnClick("process-step1", (btn) => {
+          btn.disabled = true;
+          $(".step1").style.display = "none";
 
           const width = +inputWidth.value;
           const height = +inputHeight.value;
           if (!(width > 1 && height > 1)) return;
 
           for (const { id, x, y } of mapping) {
-            const canvas = document.createElement("canvas");
-            canvas.width = width;
-            canvas.height = height;
+            const canvas = $ce("canvas", { width, height });
             const ctx = canvas.getContext("2d");
             ctx.clearRect(0, 0, width, height);
             ctx.drawImage(image, x, y, width, height, 0, 0, width, height);
 
-            const input = document.createElement("input");
-            input.id = id;
-            input.type = "checkbox";
-            input.checked = true;
-            input.meta = {
-              x,
-              y,
-              canvas,
-            };
-            fieldset.appendChild(input);
-
-            const label = document.createElement("label");
-            label.htmlFor = id;
-            label.style = `width: ${width}px; height: ${height}px; background-image: url(${canvas.toDataURL()})`;
+            const label = $ce("label", {
+              htmlFor: id,
+              style: `width: ${width}px; height: ${height}px; background-image: url(${canvas.toDataURL()})`,
+            });
             fieldset.appendChild(label);
+
+            const input = $ce("input", { id, type: "checkbox", checked: true, meta: { x, y, canvas } });
+            label.appendChild(input);
           }
 
-          document.querySelectorAll(".step2").forEach((e) => (e.style.display = "block"));
+          $(".step2").style.display = "block";
           return false;
-        };
-        buttonProcessStep1.disabled = false;
+        });
+        $("button[name=process-step1]").disabled = false;
       });
 
       const sprites = [];
-      buttonProcessStep2.onclick = () => {
+
+      buttonOnClick("process-step2", () => {
         const width = +inputWidth.value;
         const height = +inputHeight.value;
 
         sprites.length = 0;
         const inputs = [];
-        document.querySelectorAll("#output input").forEach((e) => e.checked === true && inputs.push(e));
+        $$("#output input").forEach((e) => e.checked === true && inputs.push(e));
         if (!inputs.length) return;
 
         const side = Math.ceil(Math.sqrt(inputs.length));
@@ -182,21 +216,19 @@
             sprites.push({ id: input.id, x: x * width, y: y * height });
           }
         }
-      };
+      });
 
-      const saveBlob = (blob, filename) => {
+      const saveBlob = (blob, download) => {
         if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = filename;
+        const href = URL.createObjectURL(blob);
+        const link = $ce("a", { href, download });
         document.body.appendChild(link);
         link.click();
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(href);
         document.body.removeChild(link);
       };
 
-      buttonDownload.onclick = async () => {
+      buttonOnClick("download", async () => {
         const css = [
           `[sprite] { width: ${+inputWidth.value}px; height: ${+inputHeight.value}px; background-image: url(${inputImage.files[0].name}); }`,
         ];
@@ -212,7 +244,7 @@
         zip.add("icons.webp", new Date(), await imageBlob.arrayBuffer());
         const zipBlob = zip.makeZip();
         saveBlob(zipBlob, "result.zip");
-      };
+      });
     </script>
   </body>
 </html>
