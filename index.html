@@ -1,0 +1,217 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Mapper</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <style>
+      html {
+        background-color: #fae3e8;
+      }
+      canvas {
+        margin-top: var(--pico-form-element-spacing-vertical);
+        width: 100%;
+        border: 1px solid #333;
+      }
+
+      .step2 {
+        display: none;
+      }
+
+      #container {
+        margin: 1.5% auto;
+        padding: 20px;
+        width: fit-content;
+        max-width: 789px;
+        background-color: #e3faf5;
+        display: flex;
+        flex-direction: column;
+        box-shadow:
+          0 4px 8px 0 rgba(0, 0, 0, 0.2),
+          0 6px 20px 0 rgba(0, 0, 0, 0.19);
+      }
+
+      .hidden {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="container">
+      <h1>SpriteSheet Cutter</h1>
+
+      <div class="step1">
+        <label forHtml="image">Sprite file</label>
+        <input name="image" type="file" accept="image/webp" />
+        <span id="dimensions"></span>
+        <label forHtml="json">Description file</label>
+        <input name="json" type="file" accept="application/json" />
+        <label forHtml="width">Width</label>
+        <input name="width" placeholder="Width" type="number" value="66" min="1" />
+        <label forHtml="height">Height</label>
+        <input name="height" placeholder="Height" type="number" value="66" min="1" />
+        <button name="process-step1" class="outline" disabled>Go!!!</button>
+      </div>
+
+      <div class="step2">
+        <fieldset id="output"></fieldset>
+        <button name="process-step2" class="outline">Go!!!</button>
+        <canvas></canvas>
+        <div role="group">
+          <button name="download">Download</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { Zip } from "./src";
+
+      const inputImage = document.querySelector("input[name=image]");
+      const spanDimensions = document.querySelector("#dimensions");
+      const inputJson = document.querySelector("input[name=json]");
+
+      const inputWidth = document.querySelector("input[name=width]");
+      const inputHeight = document.querySelector("input[name=height]");
+
+      const buttonProcessStep1 = document.querySelector("button[name=process-step1]");
+      const fieldset = document.querySelector("#output");
+      const buttonProcessStep2 = document.querySelector("button[name=process-step2]");
+      const resultCanvas = document.querySelector("canvas");
+      const buttonDownload = document.querySelector("button[name=download]");
+
+      const imagePromise = new Promise((resolve, reject) => {
+        inputImage.onchange = () => {
+          const file = inputImage.files[0];
+          if (!file) return;
+          inputImage.disabled = true;
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const image = new Image();
+            image.onload = function () {
+              spanDimensions.textContent = `width: ${image.naturalWidth}, height: ${image.naturalHeight}`;
+              resolve(image);
+            };
+            image.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        };
+      });
+
+      const mappingPromise = new Promise((resolve, reject) => {
+        inputJson.onchange = () => {
+          const file = inputJson.files[0];
+          if (!file) return;
+          inputJson.disabled = true;
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const mapping = JSON.parse(e.target.result);
+            resolve(mapping);
+          };
+          reader.readAsText(file);
+        };
+      });
+
+      Promise.all([imagePromise, mappingPromise]).then(([image, mapping]) => {
+        buttonProcessStep1.onclick = () => {
+          document.querySelectorAll(".step1").forEach((e) => (e.style.display = "none"));
+          buttonProcessStep1.disabled = true;
+
+          const width = +inputWidth.value;
+          const height = +inputHeight.value;
+          if (!(width > 1 && height > 1)) return;
+
+          for (const { id, x, y } of mapping) {
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, width, height);
+            ctx.drawImage(image, x, y, width, height, 0, 0, width, height);
+
+            const input = document.createElement("input");
+            input.id = id;
+            input.type = "checkbox";
+            input.checked = true;
+            input.meta = {
+              x,
+              y,
+              canvas,
+            };
+            fieldset.appendChild(input);
+
+            const label = document.createElement("label");
+            label.htmlFor = id;
+            label.style = `width: ${width}px; height: ${height}px; background-image: url(${canvas.toDataURL()})`;
+            fieldset.appendChild(label);
+          }
+
+          document.querySelectorAll(".step2").forEach((e) => (e.style.display = "block"));
+          return false;
+        };
+        buttonProcessStep1.disabled = false;
+      });
+
+      const sprites = [];
+      buttonProcessStep2.onclick = () => {
+        const width = +inputWidth.value;
+        const height = +inputHeight.value;
+
+        sprites.length = 0;
+        const inputs = [];
+        document.querySelectorAll("#output input").forEach((e) => e.checked === true && inputs.push(e));
+        if (!inputs.length) return;
+
+        const side = Math.ceil(Math.sqrt(inputs.length));
+        resultCanvas.width = side * width;
+        resultCanvas.height = side * height;
+        const ctx = resultCanvas.getContext("2d");
+        ctx.clearRect(0, 0, resultCanvas.width, resultCanvas.height);
+
+        let index = 0;
+        for (let y = 0; y < side; y++) {
+          for (let x = 0; x < side; x++) {
+            const input = inputs[index++];
+            if (!input) break;
+
+            ctx.drawImage(input.meta.canvas, x * width, y * height);
+            sprites.push({ id: input.id, x: x * width, y: y * height });
+          }
+        }
+      };
+
+      const saveBlob = (blob, filename) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+      };
+
+      buttonDownload.onclick = async () => {
+        const css = [
+          `[sprite] { width: ${+inputWidth.value}px; height: ${+inputHeight.value}px; background-image: url(${inputImage.files[0].name}); }`,
+        ];
+
+        for (const { id, x, y } of sprites) {
+          css.push(`[sprite="${id}"] { background-position: -${x}px -${y}px; }`);
+        }
+
+        const zip = new Zip();
+        zip.addStr("icons.css", new Date(), css.join("\n"));
+        zip.addStr("icons.json", new Date(), JSON.stringify(sprites));
+        const imageBlob = await new Promise((resolve) => resultCanvas.toBlob(resolve, "image/webp", 1));
+        zip.add("icons.webp", new Date(), await imageBlob.arrayBuffer());
+        const zipBlob = zip.makeZip();
+        saveBlob(zipBlob, "result.zip");
+      };
+    </script>
+  </body>
+</html>
