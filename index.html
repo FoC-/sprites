@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
   <head>
-    <title>Mapper</title>
+    <title>Sprite sheet</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
@@ -25,17 +25,38 @@
           0 6px 20px 0 rgba(0, 0, 0, 0.19);
       }
 
+      .step2 .selectors {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+
       #output {
         display: flex;
         justify-content: space-evenly;
         flex-wrap: wrap;
       }
 
-      #output label {
+      #output div {
+        position: relative;
         scale: 75%;
       }
 
-      canvas {
+      #output div input {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        height: 100%;
+        width: 100%;
+        opacity: 0.2;
+      }
+
+      #output div input:checked {
+        opacity: 0.6;
+        background-color: #000;
+      }
+
+      #result {
         margin-top: var(--pico-form-element-spacing-vertical);
         margin-bottom: var(--pico-form-element-spacing-vertical);
         width: 100%;
@@ -56,8 +77,7 @@
       <hgroup>
         <h1>Sprite sheet cutter</h1>
         <p>
-          Free, SERVERLESS, online tool for making subsets of image sprites.
-          <br />
+          Free, SERVERLESS, online tool for making subsets of image sprites.<br />
           Additionally generate css and metadata for new sheets.
         </p>
       </hgroup>
@@ -68,12 +88,14 @@
 
         <div class="grid">
           <label forHtml="image">
-            Sprite file
+            Sprite file<br />
+            <small>Webp sprite sheet</small>
             <input name="image" type="file" accept="image/webp" />
             <span id="dimensions"></span>
           </label>
           <label forHtml="json">
-            Description file
+            Description file<br />
+            <small>{id: string, x: number, y:number}[]</small>
             <input name="json" type="file" accept="application/json" />
           </label>
         </div>
@@ -83,18 +105,22 @@
           <input name="width" placeholder="Width" type="number" min="1" />
           <input name="height" placeholder="Height" type="number" min="1" />
         </div>
-        <button name="process-step1" class="outline" disabled>Go!!!</button>
+        <div role="group">
+          <button name="process-step1" disabled>Cut</button>
+        </div>
       </section>
 
       <section class="step2">
-        <div role="group">
+        <div role="group" class="selectors">
           <button name="select-all">Select ALL</button>
           <button name="unselect-all">Unselect ALL</button>
           <button name="invert-selection">Invert selection</button>
         </div>
         <fieldset id="output"></fieldset>
-        <button name="process-step2" class="outline">Go!!!</button>
-        <canvas></canvas>
+        <div role="group">
+          <button name="process-step2">Generate</button>
+        </div>
+        <canvas id="result"></canvas>
         <div role="group">
           <button name="download">Download</button>
         </div>
@@ -111,8 +137,17 @@
         $(`button[name=${name}]`).onclick = (e) => handler(e.target);
       };
 
+      const saveBlob = (blob, download) => {
+        if (!blob) return;
+        const href = URL.createObjectURL(blob);
+        const link = $ce("a", { href, download });
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(href);
+      };
+
       const inputImage = $("input[name=image]");
-      const spanDimensions = $("#dimensions");
       const inputJson = $("input[name=json]");
       const inputWidth = $("input[name=width]");
       const inputHeight = $("input[name=height]");
@@ -122,7 +157,7 @@
       buttonOnClick("invert-selection", () => $$("#output input").forEach((e) => (e.checked = !e.checked)));
 
       const fieldset = $("#output");
-      const resultCanvas = $("canvas");
+      const resultCanvas = $("#result");
 
       const imagePromise = new Promise((resolve, reject) => {
         inputImage.onchange = () => {
@@ -134,7 +169,7 @@
           reader.onload = (e) => {
             const image = new Image();
             image.onload = () => {
-              spanDimensions.textContent = `width: ${image.naturalWidth}, height: ${image.naturalHeight}`;
+              $("#dimensions").textContent = `width: ${image.naturalWidth}, height: ${image.naturalHeight}`;
               resolve(image);
             };
             image.src = e.target.result;
@@ -168,19 +203,18 @@
           if (!(width > 1 && height > 1)) return;
 
           for (const { id, x, y } of mapping) {
+            const wrapper = $ce("div");
+            fieldset.appendChild(wrapper);
+
             const canvas = $ce("canvas", { width, height });
+            wrapper.appendChild(canvas);
+
             const ctx = canvas.getContext("2d");
             ctx.clearRect(0, 0, width, height);
             ctx.drawImage(image, x, y, width, height, 0, 0, width, height);
 
-            const label = $ce("label", {
-              htmlFor: id,
-              style: `width: ${width}px; height: ${height}px; background-image: url(${canvas.toDataURL()})`,
-            });
-            fieldset.appendChild(label);
-
             const input = $ce("input", { id, type: "checkbox", checked: true, meta: { x, y, canvas } });
-            label.appendChild(input);
+            wrapper.appendChild(input);
           }
 
           $(".step2").style.display = "block";
@@ -218,24 +252,11 @@
         }
       });
 
-      const saveBlob = (blob, download) => {
-        if (!blob) return;
-        const href = URL.createObjectURL(blob);
-        const link = $ce("a", { href, download });
-        document.body.appendChild(link);
-        link.click();
-        URL.revokeObjectURL(href);
-        document.body.removeChild(link);
-      };
-
       buttonOnClick("download", async () => {
-        const css = [
-          `[sprite] { width: ${+inputWidth.value}px; height: ${+inputHeight.value}px; background-image: url(${inputImage.files[0].name}); }`,
-        ];
-
-        for (const { id, x, y } of sprites) {
-          css.push(`[sprite="${id}"] { background-position: -${x}px -${y}px; }`);
-        }
+        const css = sprites.map(({ id, x, y }) => `[sprite="${id}"] { background-position: -${x}px -${y}px; }`);
+        css.unshift(
+          `[sprite] { width: ${+inputWidth.value}px; height: ${+inputHeight.value}px; background-image: url(${inputImage.files[0].name}); }`
+        );
 
         const zip = new Zip();
         zip.addStr("icons.css", new Date(), css.join("\n"));
